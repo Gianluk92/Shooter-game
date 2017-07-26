@@ -1,0 +1,347 @@
+#include "bullet.s3d"
+#include "screen.s3d"
+
+#define SWAT_START_WALK  	16
+#define SWAT_END_WALK  	48
+#define NUM_ARMI 			2
+#define LIFE_MAX 			100
+#define JUMP 				0.24
+
+var time_b =0;
+var enter = FALSE;
+var first_visual = FALSE;
+var jump_start = 400;
+var jump_end = TRUE;
+var enable = TRUE;
+
+class player
+{
+	// mesh
+	var mesh_lower;
+	var mesh_upper;
+	var mesh_railgun;
+	// obj 
+	var obj_root;
+	var obj_lower;
+	var obj_upper;
+	var obj_railgun;
+	// player management
+	var old_position;
+	var position;
+	var verso;
+	var corsa;
+	var speed;
+	var direction;
+	var direction_lr;
+	var angleY;
+	var lat;
+	// player color and mesh animation
+	var color;
+	var current_frame;
+	// player's ammo
+	var player_bullet;
+	var shot_direction;
+	var selected_weapon;
+	var unlock;
+	//player life and score
+	var life;
+	var score;
+	// sound
+	var sfx_step;
+	// after died variable
+	var restart;
+	// screen managemente variable
+	var scr;
+	
+	//init(i,c,p);
+	controll();
+	draw();
+	update();
+	reset_pl();
+	update_other();
+	ChangeWeapon();
+	visual(visual);
+	SetShotDirection(direction);
+	SetPosition(x,y,z);
+	GetPosition();
+	GetDirection();
+	step(move);
+	SetAngle(angle);
+	GetAngle();
+	LooseLife(value);
+	GetWeapon();
+};
+
+function player::player(i,c,p)
+{
+	restart = FALSE;
+	unlock = FALSE;
+	color = c;
+	score = 0;
+	verso = 0;
+	lat = 0;
+	corsa = 0;
+	shot_direction = [0,0,0];
+	selected_weapon = 0;
+	life = LIFE_MAX;
+	
+	scr = screen();
+	
+	mesh_lower = CVmNewMesh("swat_lower.AAM");
+	mesh_upper = CVmNewMesh("swat_upper.AAM");
+	mesh_railgun = CVmNewMesh("railgun.AAM");
+	
+	mesh_lower.scale(0.036);
+	mesh_upper.scale(0.036);
+	mesh_railgun.scale(0.036);
+	
+	obj_lower = CVmObj(mesh_lower);
+	obj_upper = CVmObj(mesh_upper);
+	obj_railgun = CVmObj(mesh_railgun);
+
+	obj_root = CVmObj();
+	obj_root.addChild(obj_upper);
+	obj_root.addChild(obj_lower);
+	obj_root.addChild(obj_railgun);
+	
+	obj_root.modulateMaterials(color);
+	
+	position = p;
+	old_position = position;
+	obj_root.setPosition(position);
+	
+	angleY = 0;
+	speed = 0.1;
+	current_frame = SWAT_START_WALK;
+
+	player_bullet = array(NUM_ARMI);
+	for(var i=0;i<NUM_ARMI;i++){
+		player_bullet[i] = bullet(color+[i,0,0],0.1+0.3*i,1+9*i,50+i*20);
+	}	
+	sfx_step = CVmVRAWav("step.wav",true); //file .wav 
+}
+
+function player::reset_pl()
+{
+	position = [0,0,0];
+	life = LIFE_MAX;
+	score = 0;
+	// valore usato dalla network per capire se il giocatore è tornato in vita
+	restart = TRUE;
+}
+
+function player::LooseLife(value)
+{
+	if(life>0)
+		if(life-value<0)
+			life = 0;
+		else
+			life -= value;
+}
+
+function player::update_other()
+{
+	verso = verso*0.01 ;
+	lat = lat *0.01;
+	// avanti-indietro	
+	direction = [sin(angleY*GRAD_TO_RAD),0,cos(angleY*GRAD_TO_RAD)];
+	// destra-sinista
+	direction_lr = [-sin((90-angleY)*GRAD_TO_RAD),0,cos((90-angleY)*GRAD_TO_RAD)];
+	
+	position = position + direction*verso*speed+direction_lr*lat*speed;	
+	
+	obj_root.SetPosition(position);	
+	obj_root.SetRotation(angleY,0,1,0);
+	
+	sfx_step.SetPosition(position);
+	sfx_step.SetListenerPosition(CameraGetPosition());
+	sfx_step.SetListenerOrientation(-CameraGetDirection());
+	
+	if(verso != 0)
+	{
+		step(verso);
+	}	
+	player_bullet[selected_weapon].update_other();
+}
+
+function player::update()
+{	
+	// avanti-indietro	
+	direction = scr.direction();
+	// destra-sinista
+	direction_lr = scr.direction_lr();
+	// check the pressed key
+	controll();
+	
+	old_position = position;
+	position = position + (direction*verso*corsa+direction_lr*lat)*speed;	
+		
+	obj_root.SetPosition(position);	
+	obj_root.SetRotation(scr.angle,0,1,0);	
+	
+	sfx_step.SetPosition(position);
+	sfx_step.SetListenerPosition(CameraGetPosition());
+	sfx_step.SetListenerOrientation(-CameraGetDirection());
+	
+	if(verso != 0)
+		step(verso);
+	if(lat != 0)
+		step(lat);
+		
+	player_bullet[selected_weapon].update();
+	
+	visual(first_visual);
+	
+	ConsoleText(0.1,0.20,"Life");
+	ConsoleText(0.1,0.15,str(life));
+	if(selected_weapon == 1)
+		ConsoleText(0.6,0.9,"Type Ammo: Strong");
+	else
+		ConsoleText(0.6,0.9,"Type Ammo: Normal");
+}
+
+ function player::step(move)
+ {
+	var delta_frame = 0.30*corsa*move;
+	current_frame += delta_frame;
+	if(current_frame >= SWAT_END_WALK)
+	{
+		current_frame = SWAT_START_WALK;
+		sfx_step.Play();
+	}
+	else 
+		if(current_frame <= SWAT_START_WALK)
+			{
+				current_frame = SWAT_END_WALK;
+				sfx_step.Play();
+			}
+		else
+			if(current_frame >= 31 && current_frame <=32)
+				sfx_step.Play();
+}
+ 
+ function player::controll()
+ {
+ 	corsa = 1;
+	lat = lat * 0.01;;
+	verso = verso*0.01;
+	
+ 	if(GetTime()-time_b > 1000)
+	{
+		enter = TRUE;
+		time_b = GetTime();
+	}
+ 	if(Keypressed("d",FALSE))
+		lat = 1;
+	if(Keypressed("a",FALSE))
+		lat = -1;
+	if(Keypressed("w",FALSE))
+		verso = 1;
+	if(Keypressed("s",FALSE))
+		verso = -1;
+	if(Keypressed(VK_SHIFT))
+		corsa = 2.4;
+ 	if(Keypressed("q",FALSE) && enter && unlock)
+	{
+		enter = FALSE;
+		ChangeWeapon();
+	}
+	if(Keypressed("r",FALSE) && enter)
+	{
+		enter = FALSE;
+		player_bullet[selected_weapon].recharge();
+	}
+	if((Keypressed("e",FALSE)|| Mouse.ButtonL()) && enter)
+	{
+		enter = FALSE;
+		player_bullet[selected_weapon].shot(position,scr.direction_ud());
+	}
+	if(KeyPressed("v",FALSE) && enter)
+	{
+		enter = FALSE;
+		first_visual = !first_visual;
+	}
+	if(KeyPressed(VK_SPACE,FALSE) && jump_end)
+	{
+		jump_end = FALSE;
+		jump_start = 0;	 
+	}
+	if(jump_start < 18)
+	{
+		position.y += JUMP;
+		jump_start ++;
+	}
+	else
+		jump_end = TRUE;
+ }
+ 
+function player::draw()
+{
+	obj_root.Draw(VR_FRAMENUMBER,current_frame);
+	player_bullet[selected_weapon].draw();
+}
+
+function player::visual(visual)
+{
+	scr.move();
+	CameraGetCurrent().SetDirection(scr.direction_ud());
+	if(visual)
+	{
+		obj_root.Unhide();
+		CameraGetCurrent().SetPosition(position+[0,1.4,0]-direction);
+		SetCursorPos(0.5,0.5);
+
+	}
+	else
+	{
+		ShowCursor(FALSE);
+		obj_root.Hide();
+		CameraGetCurrent().SetPosition(position+[0,1.2,0]);
+		SetCursorPos(0.5,0.5);
+		ConsoleFont("Arial",25);
+		ConsoleText(0.496,0.5,"x");
+	}	
+}
+
+function player::SetPosition(x,y,z)
+{
+	position.x = x;
+	position.z = z;
+	position.y = y;
+}
+
+function player::GetPosition()
+{
+	return position;
+}
+
+function player::GetDirection()
+{
+	return direction;
+}
+
+function player::SetAngle(angle)
+{
+	angleY += angle;
+}
+
+function player::GetAngle()
+{
+	return angleY;
+}
+
+function player::SetShotDirection(direction)
+{
+	shot_direction = direction;
+}
+
+function player::ChangeWeapon()
+{
+	selected_weapon = (selected_weapon+1)%NUM_ARMI;
+
+}
+
+function player::GetWeapon()
+{
+	return player_bullet[selected_weapon];
+}

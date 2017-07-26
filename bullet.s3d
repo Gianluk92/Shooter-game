@@ -1,0 +1,114 @@
+#define N_COLPI 25
+
+class bullet
+{
+	var position;
+	var direction;
+	var speed;
+	var mesh;
+	var obj;
+	var life;
+	var verso;
+	var color;
+	var power;
+	var max_life;
+	var n_muniz;
+	var sfx_shoot;
+	var sfx_jam;
+	var n_car;
+	
+	update_other();
+	recharge();
+	GetPosition();
+	Collision();
+	shot(pos,dir);
+	update();
+	draw();	
+};
+
+function bullet:: bullet(c,size,power_p,n_life)
+{
+	max_life = n_life;
+	n_car = 0;
+	n_muniz = N_COLPI;
+	color = c;
+	mesh = CVmNewMesh(VRP_SPHERE);
+	mesh.scale(size);
+	mesh.modulateMaterials(color);
+	obj = CVmObj(mesh);
+	life = 0;
+	position = [0.0,-20.0,0.0];
+	direction = [0.0,-20.0,0.0];
+	speed = 1;
+	power = power_p;
+	sfx_jam = CVmVRAWav("jam.wav",true); //file .wav 
+	sfx_shoot = CVmVRAWav("shoot.wav",true); //file .wav 
+}
+
+function bullet::shot(pos,dir){
+	sfx_shoot.SetPosition(position);
+	sfx_jam.SetPosition(position);
+	if(life <= 0 && n_muniz > 0){
+		obj.Unhide();
+		//verso = ver;
+		position = pos+[0,1.2,0];
+		direction = dir;
+		life = max_life;
+		n_muniz--;
+		sfx_shoot.Play();
+	}
+	else
+		if(n_muniz == 0)
+		{
+			sfx_jam.Play();
+		}
+}
+
+function bullet::recharge(){
+	if(n_car > 0)
+	{
+		n_muniz = N_COLPI;
+		n_car--;
+	}
+}
+
+function bullet::update_other()
+{
+	if(life > 0)
+	{	
+		position += direction*speed;
+		obj.setPosition(position);
+		life--;
+	}
+	else{
+		position = [0,-20,0];
+		obj.setPosition(position);  
+	}
+}
+
+function bullet::update(){
+	
+	ConsoleText(0.86,0.24,"Ammo");
+	ConsoleText(0.86,0.18,str(n_muniz));
+	ConsoleText(0.86,0.12,str(n_car));
+	 
+	if(life > 0)
+	{
+		position += direction*speed;
+		obj.setPosition(position);
+		life--;
+	}
+	else{
+		position = [0,-20,0];
+		obj.setPosition(position);  
+	}
+}
+
+function bullet:: draw(){
+	if(life > 0)	
+		obj.draw();
+}
+
+function bullet::GetPosition(){
+	return position;
+}

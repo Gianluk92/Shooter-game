@@ -1,0 +1,244 @@
+#include "player.s3d"
+
+#define MYPOS 	player_array[0].GetPosition()
+#define MYPOSW	player_array[0].player_bullet[player_array[0].selected_weapon].position
+#define COLL_X 	0.2
+#define COLL_Z 	0.2
+#define GRAVITY 	0.17
+#define STAIRS 	0.12
+
+var timer_ammo = 0;
+// the first point is inside the labyrinth and is used to unlock the power ammo
+var recharge_pos = {{-37.1754,-6,-82.1591},{-38.8568,7.71999,54.2426},{35.8643,2.759997,-58.2382},{-110.667,-6,184.908},{106.83,2.92,43.736},{-155.965,-6,-72.0622}};
+var p_t = [50,-5.8,-200];
+var frame = 0;
+
+class level
+{
+	var centro_mesh;
+	var train_mesh;
+	
+	var recharge;
+	
+	var train_obj;	
+	var centro_obj;
+	var tree_obj;
+	var level_obj;
+	
+	var level_matrix;
+	
+	var player_array;
+	var player_number;
+	
+	var sfx_hit;
+	var start;
+
+	take_ammo(); 
+	draw_sky();
+	train_walk();
+	addPlayer(col);
+	collision_detect_avatar(object);
+	collision_detect_otherPlayer(position);
+	collision_detect_bullet(object);
+	collision_detect_other_bullet(position);
+	update();
+	draw();
+};
+
+function level::level()
+{
+	level_obj = CVmObj();
+
+	player_number = 0;
+	player_array = array(0);
+	start = FALSE;
+	// mesh statica della mappa. Alcuni punti possono essere migliorati usando 3Dstudio-max 	
+	centro_mesh = CVmNewMesh("Grande_centro.dae");
+	centro_mesh.CenterBoundingBox();
+	centro_mesh.Normalize(450);
+	centro_obj = CVmObj(centro_mesh);
+
+/* Recharger point -> punti di ricarica per le armi e sblocco dell'arma potenziata */
+	recharge = Array(0);
+	for(var i=0;i<len(recharge_pos);i++){
+		// billboard used to recharge the ammo
+		aadd(recharge,CVmBillboard("arrow.png",1,1,recharge_pos[i][0],recharge_pos[i][1],recharge_pos[i][2]));
+	}
+	
+	train_mesh = CVmNewMesh("train.dae");
+	train_mesh.CenterBoundingBox();
+	train_mesh.Normalize(20);
+	train_mesh.Rotate(45,0,1,0);
+	train_obj = CVmObj(train_mesh);
+	
+	tree_obj = Array(0);
+	for(var i=0;i<50;i++)
+	{
+		// random trees inside the map.
+		aadd(tree_obj,CVmBillboard("tree.png",2,4,rand(50),-4.6,rand(180)));
+	}
+	// this two functions create a tree of mesh in way to check the collision just with the 
+	// top of the tree and not with each object 
+	level_obj.addChild(centro_obj,0,0,0);
+	level_obj.addChild(train_obj);
+	sfx_hit = CVmVRAWav("hit.wav",true); //file .wav
+}
+
+function level::addPlayer(col){
+	if(col== VOID)
+		col = [rand(255)/255.0,rand(255)/255.0,rand(255)/255.0];
+	var ch = rand(4)+1;
+	var tmp = recharge_pos[ch];
+	var pos = [recharge_pos[ch][0],recharge_pos[ch][1],recharge_pos[ch][2]];
+	var tempplayer = player(player_number,col,pos);
+	aadd(player_array,tempplayer);
+	player_number++;
+}
+
+function level::train_walk(){
+	// this is used for move the train
+	train_obj.setPosition(p_t);
+	if(frame < 10000)
+	{
+		p_t+=[0.1,0,0.1];
+		frame++;
+	}
+	else
+	{
+		frame = 0;
+		p_t = [50,-5.8,-200];
+	}
+}
+
+function level::update(){
+	
+	train_walk();
+	collision_detect_avatar(level_obj);
+	collision_detect_bullet(level_obj);
+	for(var i =1;i<player_number;i++)
+		collision_detect_otherPlayer(player_array[i].position);
+	take_ammo();
+	player_array[0].update();
+	for(var i=1;i<player_number;i++)
+		player_array[i].update_other();
+}
+
+function level::draw()
+{
+	// here are check the condition of life/died for the main character
+	if(((MYPOS.x>p_t.x-4 && MYPOS.z>p_t.z-4) && 
+	(MYPOS.x<p_t.x+4 && MYPOS.z < p_t.z+4)) ||
+	player_array[0].position.y < -9 || player_array[0].life <= 0)
+	{
+		var Message = "You died!";
+		ConsoleWidth (2);
+		ConsoleColor (1, 0, 0, 0.5); // r, g, b, alpha
+		ConsoleFilledRect (0.35, 0.6, 0.3, 0.1 ); // x, y, dimX, dimY
+		ConsoleColor (1, 1, 1, 0.8);
+		ConsoleRect (0.35, 0.6, 0.3, 0.1 );
+		ConsoleFont ("Arial", 18); // name, size
+		ConsoleText (0.39, 0.54, Message);
+		ConsoleText (0.6,0.54,str(player_array[0].score));
+		ConsoleWidth (1);
+		player_array[0].life = 0;
+	}
+	else
+	{
+		var i;
+		// disegna il cielo
+		LoadBackground("sky.jpg");
+		// disegna il treno
+		train_obj.draw();
+		// disegna la mappa generale
+		level_obj.draw();
+		// disegna le bill_board degli alberi
+		for(i=0;i<40;i++)
+			tree_obj[i].Draw();
+		// disegna i personaggi 	
+		for(i=0;i<player_number;i++)
+			player_array[i].draw();
+		for(i=0;i<len(recharge);i++)
+			recharge[i].draw();
+	}
+}
+
+function level::collision_detect_avatar(object)
+{
+	// controlla collisione personaggio e l'albero degli oggetti mesh
+	// inoltre permette di salire le scale e applica la gravità
+	if(object.IsColliding(MYPOS+[0.1*player_array[0].verso,0.1,0.1*player_array[0].verso],MYPOS+[0.1*player_array[0].verso,0.6,0.1*player_array[0].verso],NULL,NULL,NULL,NULL,TRUE) && !object.isColliding(MYPOS+[0.1*player_array[0].verso,1,0.1*player_array[0].verso],MYPOS+[0.1*player_array[0].verso,1.5,0.1*player_array[0].verso],NULL,NULL,NULL,NULL,TRUE))
+	{
+		player_array[0].position.y += STAIRS;
+	}
+	else{
+		if(!object.isColliding(MYPOS-[0,-0.1,0],MYPOS-[0,0,0],NULL,NULL,NULL,NULL,TRUE))
+		{
+			player_array[0].position.y -= GRAVITY;
+			jump_end = FALSE;	
+		}
+		if(object.IsColliding(MYPOS-[0,-0.6,0],MYPOS-[0,-1.5,0],NULL,NULL,NULL,NULL,TRUE) ||
+		   object.IsColliding(MYPOS+[COLL_X,0.6,COLL_Z],MYPOS-[COLL_X,-0.2,COLL_Z],NULL,NULL,NULL,NULL,TRUE))
+		{
+			player_array[0].SetPosition(player_array[0].old_position.x,player_array[0].old_position.y,player_array[0].old_position.z);
+		}
+	}	
+}
+
+function level::collision_detect_otherPlayer(position)
+{
+	// permette di non avere collisioni con gli altri giocatori
+	if((MYPOS.x>position.x-0.5 && MYPOS.z>position.z-0.5 && MYPOS.y > position.y-0.2) && 
+		(MYPOS.x<position.x+0.5 && MYPOS.z < position.z+0.5 && MYPOS.y < position.y+0.2))
+		{
+			player_array[0].SetPosition(player_array[0].old_position.x,player_array[0].old_position.y,player_array[0].old_position.z);
+		}
+}
+
+function level::collision_detect_other_bullet(position)
+{
+	// riconosce la collisione pallottola giocatore
+	if((MYPOSW.x>position.x-0.2 && MYPOSW.z>position.z-0.2 && MYPOSW.y > position.y) && 
+		(MYPOSW.x<position.x+0.2 && MYPOSW.z < position.z+0.2 && MYPOSW.y < position.y+1.8))
+	{
+		var posp = [0,-20,0];
+		player_array[0].score++;
+		player_array[0].player_bullet[player_array[0].selected_weapon].position = posp;
+		player_array[0].player_bullet[player_array[0].selected_weapon].life = 0;
+		sfx_hit.SetPosition(MYPOS);
+		sfx_hit.Play();
+		return 1;
+	}
+	return 0;
+}
+
+function level::collision_detect_bullet(object)
+{
+	// riconosce la collisione pallottola elementi mesh
+	if(object.isColliding(MYPOSW+[0.2,0,0.2],MYPOSW-[0.2,0,0.2],NULL,NULL,NULL,NULL,TRUE))
+	{	
+		sfx_hit.SetPosition(MYPOS);
+		sfx_hit.Play();
+		player_array[0].player_bullet[player_array[0].selected_weapon].life = 0;
+		return 1;
+	}
+	return 0;
+
+}
+
+function level::take_ammo()
+{
+	// permette la ricarica delle armi e lo sblocco dell arma speciale
+	if((MYPOS.x>recharge_pos[0][0]-2 && MYPOS.y>recharge_pos[0][1]-2 && MYPOS.z>recharge_pos[0][2]-2)&&
+		(MYPOS.x<recharge_pos[0][0]+2 && MYPOS.y<recharge_pos[0][1]+2 && MYPOS.z<recharge_pos[0][2]+2))
+	{	
+		player_array[0].unlock = TRUE;
+		ConsoleText(0.4,0.5,"Ammo Unlock");
+	}
+	for(var i=1;i<len(recharge_pos);i++)
+		if(((MYPOS.x>recharge_pos[i][0]-2 && MYPOS.y>recharge_pos[i][1]-2 && MYPOS.z>recharge_pos[i][2]-2)&&
+			(MYPOS.x<recharge_pos[i][0]+2 && MYPOS.y<recharge_pos[i][1]+2 && MYPOS.z<recharge_pos[i][2]+2))&& GetTime()-timer_ammo>30000)
+		{
+			player_array[0].GetWeapon().n_car++;
+			timer_ammo = GetTime();
+		}
+}

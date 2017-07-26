@@ -1,0 +1,149 @@
+/* Include s3d symbols */
+#include <Script3d.h>
+#include <Camera.s3d.h>
+#include "maps.s3d"
+#include "network.s3d"
+
+/* Set global scene parameters */
+SET SCENE_FOV  = 50;
+SET SCENE_NEAR = 0.2;
+SET SCENE_FAR  = 500;
+SET AUDIO_OPENAL = 1;
+
+
+// TODO: put your global variables here
+
+/* Camera globals */
+var CamPos = [0.0, 5.0, 30.0]; 	// camera position
+
+/* Light globals */
+var Light0;
+var PosL = [0.0, 100.0, 0.0];	// default light position
+
+var myLevel;
+var Net;
+var tmp;
+
+/* Function declarations */
+function CameraMoveMouse();
+function DrawGrid(col, size);
+
+
+
+function OnDownload()
+{
+	// TODO: download your resources here
+	// E.g.: FileDownload("resource.ext");
+	FileDownload("XVRCollada.dll");
+	FileDownload("libcollada14dom21.dll");
+	FileDownload("XVRResources.zip");
+}
+
+function Menu()
+{
+	var select = 0;
+	do
+	{
+		ShowCursor(TRUE);
+		tmp = CVmMenu("Title");
+		tmp.AddItem("Start",1);
+		tmp.AddItem("Setting",2);
+		tmp.AddItem("Istruction",3);
+		tmp.AddItem("Continue",4);
+		tmp.AddItem("Exit",5);
+		select = tmp.Draw(10,10);
+		switch(select)
+		{
+			case 1:
+				myLevel.player_array[0].reset_pl();
+				myLevel.start = TRUE;
+				break;
+			case 2:
+				myLevel.player_array[0].scr.full();
+				break;
+			case 3: 
+				ConsoleFont("Time New Romans",25);
+				ConsoleText(0.1,0.7,"Kill your enemy, find the special weapon."); 
+				ConsoleText(0.1,0.6,"The game is online internet connection is required");
+				ConsoleText(0.1,0.55,"W,A,S,D -> moviment");
+				ConsoleText(0.1,0.5,"E, click -> shot");
+				ConsoleText(0.1,0.45,"space bar -> jump");
+				ConsoleText(0.1,0.4,"R -> recharge when a recharge is avaible");
+				ConsoleText(0.1,0.35,"Q -> change weapon after you discover it");
+				ConsoleText(0.1,0.3,"shift -> run");
+				break;
+			case 4: break;
+			case 5:
+				myLevel.player_array[0].life = 0;
+				myLevel.player_array[0].scr.close();
+				break;
+			default :break;
+				
+		}
+	}while(select != 1 && select != 4 && select != 5);	
+}
+
+function OnInit(params)
+{
+	/* initialize light */
+	Light0 = CVmLight();
+	Light0.SetPosition(PosL);
+	Light0.SetDiffuse(1, 1, 1);
+	Light0.SetParameter(GL_LINEAR_ATTENUATION,0.1);
+	Light0.Enable();	
+	// initialize level	
+	myLevel = level();
+	// initialize network
+	Net = network();
+	Net.init();
+	// set the time for the ontimer function
+	settimestep(1);
+	// lock frame rate to 60 Hz
+	SetFrameRate(60);
+	//Menu();
+	ConsoleFont("Arial",25);
+	ConsoleColor (1, 1, 1, 0.8);
+	// add first player
+	myLevel.addPlayer([1,1,1]);
+	myLevel.player_array[0].scr.init();
+}
+
+function OnFrame()
+{
+	if(KeyPressed(VK_ESCAPE,FALSE))
+	{
+		Menu();
+	}
+	myLevel.update();
+	glEnable(GL_BLEND);
+	SceneBegin();
+		myLevel.draw();	
+	SceneEnd();
+}
+
+
+
+function DownloadReady(RequestID)
+{
+	// TODO
+}
+
+function OnTimer()
+{
+		// gestione delle funzioni di rete con controllo ogni millisecondo
+		Net.send(myLevel);
+		Net.update(myLevel);
+}
+
+function OnEvent(eventID, wparam, lparam){
+	
+}
+
+function OnError(){
+	// TODO: put your errors handling code here
+}
+
+function OnExit()
+{
+
+}

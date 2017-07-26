@@ -1,0 +1,246 @@
+#define WELCOME_PDU 	0
+#define POSITION_PDU	1
+#define MISSILE_PDU 	2
+#define HIT_PDU 		3
+#define LIFE_PDU 		4
+#define DIED_PDU		5
+#define RESTART_PDU	6
+
+#define MYPL 			myLevel.player_array[0]
+#define MYWP			player_bullet[MYPL.selected_weapon]
+
+var count = 0;
+
+class network
+{
+	var address;
+	var myIp;
+	var PDU;
+	var timer_position;
+	var timer_shoot;
+	var timer_life;
+	var time_welcome;
+	var ready;
+	
+	init();
+	receive(myLevel);
+	send(myLevel);
+	update(myLevel);
+};
+
+function network::init()
+{
+	address = array(0);
+	myIp = NetGetIP();
+	var tmp = split(myIp,".");
+	myIp =val(tmp[3]); 
+	ready = FALSE;
+	aadd(address,myIp);
+	global var channel1 = NetCreateChannel(50023,"0.0.0.0",VR_NO_BLOCKING);
+	timer_position 	= 0;
+	timer_shoot	 	= 0;
+	timer_life 	 	= 0;
+	time_welcome		= 0;
+}
+
+function network::update(myLevel)
+{
+	var i;
+	var exist = FALSE;
+	// check the presence of new packet
+	var received_data = receive(myLevel); 
+	if(received_data != NULL)
+	{ 	
+	// if a welcome_pdu is received a new player is added
+		if(received_data[0] == WELCOME_PDU)
+		{
+			for(var i=0;i<len(address);i++)
+				if(address[i] == received_data[1])
+				{
+						exist = TRUE;
+						break;
+				}
+			if(!exist)
+			{	
+				aadd(address,received_data[1]);
+				myLevel.addPlayer();
+			}		
+		}
+		if(received_data[1] != myIp && myLevel.player_number>1)
+		{
+			// this checks what player has sent the received packet
+			for(i=1;i<len(address);i++)
+				if(address[i] == received_data[1])
+					break;
+			if(received_data[0] == POSITION_PDU)
+			{
+				myLevel.player_array[i].position.x = received_data[2];
+				myLevel.player_array[i].position.y = received_data[3];
+				myLevel.player_array[i].position.z = received_data[4];
+				myLevel.player_array[i].angleY = received_data[5];
+				myLevel.player_array[i].verso = received_data[6];
+				myLevel.player_array[i].speed = received_data[7];
+				myLevel.player_array[i].corsa = received_data[8];
+				myLevel.player_array[i].lat = received_data[9];
+			}
+			if(received_data[0] == MISSILE_PDU)
+			{
+				myLevel.player_array[i].selected_weapon = received_data[2];
+				myLevel.player_array[i].player_bullet[received_data[2]].position.x = received_data[3];
+				myLevel.player_array[i].player_bullet[received_data[2]].position.y = received_data[4];
+				myLevel.player_array[i].player_bullet[received_data[2]].position.z = received_data[5];
+				myLevel.player_array[i].player_bullet[received_data[2]].life = received_data[6];
+				myLevel.player_array[i].player_bullet[received_data[2]].direction.x = received_data[7];
+				myLevel.player_array[i].player_bullet[received_data[2]].direction.y = received_data[8];
+				myLevel.player_array[i].player_bullet[received_data[2]].direction.z = received_data[9];
+			}
+			if(received_data[0] == HIT_PDU)
+			{
+				if(myIp == received_data[2])
+				{		
+					myLevel.player_array[0].LooseLife(received_data[3]);
+					var a = received_data[3];
+					trace(a);
+				}
+			}
+			if(received_data[0] == LIFE_PDU)
+			{
+				var b = "receive riepilogo";
+				trace(b);
+				if(myIp == received_data[2])
+				{
+					if(myLevel.player_array[0].life > received_data[3])
+						myLevel.player_array[0].life = received_data[3];
+				}
+			}
+			if(received_data[0] == DIED_PDU)
+			{	
+				myLevel.player_array[i].obj_root.Hide();
+				myLevel.player_array[i].position += [0,100,0];
+			}
+			if(received_data[0] == RESTART_PDU)
+			{
+				myLevel.player_array[i].obj_root.Unhide();
+			}
+			
+		}
+	}			
+}
+
+function network::receive(myLevel)
+{	
+	var address1 = "...........";
+	var received_data;
+	received_data = NetVarReceiveFrom(channel1,&address1);
+	return received_data;
+}
+
+function network::send(myLevel)
+{ // here we send all the information about the main player
+	
+	// this PDU is sent every 5 second. In this way a new user can enter in every moment 
+	// and although the packet is lost after 5 second the packet is resend.
+	var PDU = vector(2);
+	PDU[0] = WELCOME_PDU;
+	PDU[1] = myIp;
+	if(GetTime()-timer_position > 5000 && myLevel.player_array[0].life > 0)
+	{
+		NetVarSendTo("192.168.1.255",50023,PDU);
+		timer_position = GetTime();
+	}		
+	
+	// this send the position if a change in it is present
+	PDU = vector(10);
+	PDU[0] = POSITION_PDU;
+	PDU[1] = myIp;
+	PDU[2] = MYPL.position.x;
+	PDU[3] = MYPL.position.y;
+	PDU[4] = MYPL.position.z;
+	PDU[5] = MYPL.scr.angle;
+	PDU[6] = MYPL.verso;
+	PDU[7] = MYPL.speed;
+	PDU[8] = MYPL.corsa;
+	PDU[9] = MYPL.lat;
+		
+	if(GetTime()-timer_position > 100 && myLevel.player_array[0].life > 0	&& abs(MYPL.position.x-MYPL.old_position.x)>0.00035 && abs(MYPL.position.z-MYPL.old_position.z)>0.00035)
+	{
+		NetVarSendTo("192.168.1.255",50023,PDU);
+		timer_position = GetTime();
+	}
+	// this send the bullet position/information 
+	if(myLevel.player_array[0].GetWeapon().life > 0){
+		PDU = vector(10);
+		PDU[0] = MISSILE_PDU;
+		PDU[1] = myIp;
+		PDU[2] = MYPL.selected_weapon;
+		PDU[3] = MYPL.MYWP.position.x;
+		PDU[4] = MYPL.MYWP.position.y;
+		PDU[5] = MYPL.MYWP.position.z;
+		PDU[6] = MYPL.GetWeapon().life;
+		PDU[7] = MYPL.GetWeapon().direction.x;
+		PDU[8] = MYPL.GetWeapon().direction.y;
+		PDU[9] = MYPL.GetWeapon().direction.z;
+		if(GetTime()-timer_shoot > 50)
+		{
+			NetVarSendTo("192.168.1.255",50023,PDU);
+			timer_shoot = GetTime();
+		}
+	}
+	// this is a summury for the life of all player.
+	// Se qualcuno perde un pacchetto che lo informa di essere stato colpito, ogni 10 secondi 
+	// un resoconto delle vite di tutti i giocatori è inviato.
+	if(GetTime()-timer_life > 10000)
+	{
+		PDU = vector(4);
+		PDU[0] = LIFE_PDU;
+		PDU[1] = myIp;
+		for(var i=1;i<myLevel.player_number;i++)
+			{
+				PDU[2] = address[i];
+				PDU[3] = myLevel.player_array[i].life; 
+				NetVarSendTo("192.168.1.255",50023,PDU);
+			}
+		timer_life = GetTime();
+	}
+	
+	// died condition 
+	if(myLevel.player_array[0].life <= 0)
+	{
+		PDU = vector(2);
+		PDU[0] = DIED_PDU;
+		PDU[1] = myIp;
+		NetVarSendTo("192.168.1.255",50023,PDU);
+ 	}
+	
+	// restart condition
+	if(myLevel.player_array[0].restart)
+	{
+		PDU = vector(2);
+		PDU[0] = RESTART_PDU;
+		PDU[1] = myIp;
+		NetVarSendTo("192.168.1.255",50023,PDU);
+		if(count==4)
+		{
+			myLevel.player_array[0].restart = FALSE;
+			count = 0;
+		}
+		else
+			count++;
+	}
+	
+	// hit condition
+	for(var i=1;i<myLevel.player_number;i++){
+		var hit = 0;
+		// this function checks if a player hits another one
+		hit = myLevel.collision_detect_other_bullet(myLevel.player_array[i].position);
+		if(hit==1)
+		{
+			var PDU = vector(4);
+			PDU[0] = HIT_PDU;
+			PDU[1] = myIp;
+			PDU[2] = address[i];
+			PDU[3] = MYPL.GetWeapon().power;
+			NetVarSendTo("192.168.1.255",50023,PDU);
+		}
+	}
+}

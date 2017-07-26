@@ -1,0 +1,149 @@
+/******************************** LIVELLO **************************************/
+
+class level
+{
+	var floor_mesh;
+	var floor_obj;
+	var floor_mat;
+	var floor_texture;
+	
+	var wall_mesh;
+	var wall_objarray;
+	var wall_texture;
+	var wall_mat;	
+	var level_matrix; //mi dice se c'è un muro sulla mappa o no
+	
+	var player_array; //vettore per aggiungere giocatori 
+	var player_number;
+	
+	init(textfile);
+	draw();
+	addplayer(col);
+	update();
+};
+
+function level::init(textfile)
+{
+	player_number = 0;
+	player_array = array(0);
+	var lines = LoadFile(textfile);
+	var rows = len(Lines) - 1; 
+	var colomns = len(Lines[0]);
+	trace(rows, colomns);
+	
+	level_matrix = array(rows);
+	for (var i = 0; i < rows; i++)
+		level_matrix[i] = array(colomns);
+		
+	for (var i = 0; i < rows; i++)
+		for (var j = 0; j < colomns; j++)
+		level_matrix[i][j] = 0;
+	
+	floor_mat = CVmMaterial();
+	floor_texture = CVmTexture("marmostriato2.png");
+	floor_mat.SetTexture(floor_texture);
+	floor_mat.ChangeTextureParams(VR_U_TILING,4);
+	floor_mat.ChangeTextureParams(VR_V_TILING,4);
+	
+	floor_mesh = CVmNewMesh(VRP_BOX);
+	floor_mesh.Scale(colomns,1,rows);//piano x colomns e z rows , y è in altezza
+	floor_mesh.ForceMaterial(floor_mat);
+	floor_mesh.ModulateMaterials(0.0,0.7,0.0);
+	
+	floor_obj = CVmObj(floor_mesh);
+	floor_obj.translate(0,-1,0);
+	
+	wall_mesh = CVmNewMesh(VRP_BOX);
+	wall_mesh.Scale(1,3,1);
+	wall_texture = CVmTexture("mattoni03.png");
+	wall_mat = CVmMaterial();
+	wall_mat.SetTexture(wall_texture);
+	wall_mat.ChangeTextureParams(VR_V_TILING, 3);
+	
+	wall_mesh.ForceMaterial(wall_mat);
+	
+	wall_objarray = Array(0);
+	var i, j;
+	for(i=0; i< rows; i++)
+		for(j=0; j < colomns; j++){
+			if(lines[i][j] == "*")
+			{
+				level_matrix[i][j] = 1;
+				var tempobj = CVmObj(wall_mesh);
+				tempobj.SetPosition(j, 0, i);
+				aadd(wall_objarray, tempobj);
+			}
+		}
+		
+	trace(level_matrix);
+			
+}
+
+function level::addplayer(col)
+{
+	if(col == VOID)
+		col = [Rand(255)/225.0, Rand(255)/225.0, Rand(255)/225.0];
+	trace(col);
+	var temp_player = player();
+	var pos = [1,0,1] + [0,0, player_number*2];
+	temp_player.init(player_number, col, pos);
+	aadd(player_array, temp_player);
+	player_number++;
+}
+
+function level::update()
+{
+	var bullet_pos = Array(player_number);
+	var player_pos = Array(player_number);
+	var i;
+	var j;
+	
+	for(i=0; i<player_number;i++){
+		player_array[i].update(level_matrix);	
+		bullet_pos[i] = player_array[i].player_bullet.position;
+		player_pos[i] = player_array[i].position;
+	}
+		
+	
+	//var bullet0pos = player_array[0].player_bullet.position;
+	//var player1pos = player_array[1].position;
+	
+	#define HIT_RANGE 0.2
+	for(i=0; i<player_number;i++)
+		for(j=0; j<player_number;j++)
+			if(i != j){
+				if( player_array[i].player_bullet.life > 0 && 
+					bullet_pos[i].x >= player_pos[j].x-HIT_RANGE && bullet_pos[i].x <= player_pos[j].x+HIT_RANGE 
+					&& bullet_pos[i].z >= player_pos[j].x-HIT_RANGE && bullet_pos[i].z <= player_pos[j].x+HIT_RANGE)
+				{
+					outputln("COLPITO: " );
+					trace(i);trace(j);
+					player_array[i].score++;
+					player_array[i].player_bullet.life = 0;
+					player_array[j].hit = true;
+					player_array[j].sfx_hit.Play();
+				}
+			}
+	
+//	if( player_array[0].player_bullet.life > 0 && 
+//		bullet0pos.x >= player1pos.x-HIT_RANGE && bullet0pos.x <= player1pos.x+HIT_RANGE 
+//		&& bullet0pos.z >= player1pos.x-HIT_RANGE && bullet0pos.z <= player1pos.x+HIT_RANGE)
+//	{
+//		outputln("COLPITO");
+//		player_array[0].score++;
+//		player_array[0].player_bullet.life = 0;
+//		player_array[1].hit = true;
+//		player_array[1].sfx_hit.Play();
+//	}
+}
+
+function level::draw()
+{
+	floor_obj.Draw();
+	var i;
+	for(i=0; i< len(wall_objarray); i++)
+		wall_objarray[i].Draw();
+	for(i=0; i<player_number;i++)
+		player_array[i].draw();	
+			
+}
